@@ -122,4 +122,7 @@ typedef unsigned int            uintptr_t;
 
 #endif
 
+#define inline inline __attribute__((always_inline)) __attribute__((__gnu_inline__))
+#define __inline__ __inline__ __attribute__((always_inline)) __attribute__((__gnu_inline__))
+
 #endif
