@@ -134,6 +134,8 @@ int do_bootm_linux(int flag, int argc, char *argv[], bootm_headers_t *images)
 	return 1;
 }
 
+#define KERNELCMDLINE_SIZE 1024
+static char gszKernelCmdlineA[KERNELCMDLINE_SIZE];
 void do_booti_linux (boot_img_hdr *hdr)
 {
 	ulong initrd_start, initrd_end;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2012 Freescale Semiconductor, Inc.
+ * Copyright (C) 2010-2013 Freescale Semiconductor, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,6 +35,21 @@
 #include <mmc.h>
 #include <sata.h>
 
+#ifdef _MX6SL_//[
+	#include "../board/freescale/mx6sl_ntx/ntx_hwconfig.h"
+	#include "../board/freescale/mx6sl_ntx/ntx_comm.h"
+	#include "../board/freescale/mx6sl_ntx/ntx_hw.h"
+#else //][!_MX6SL_
+	#include "../board/freescale/mx6q_ntx/ntx_hwconfig.h"
+	#include "../board/freescale/mx6q_ntx/ntx_comm.h"
+	#include "../board/freescale/mx6q_ntx/ntx_hw.h"
+#endif//] _MX6SL_
+
+
+
+extern volatile NTX_HWCONFIG *gptNtxHwCfg;
+
+
 /*
  * Defines
  */
@@ -61,6 +76,7 @@
 #define ANDROID_KERNEL_SIZE	    0x500000
 #define ANDROID_URAMDISK_OFFSET	    0x600000
 #define ANDROID_URAMDISK_SIZE	    0x100000
+
 
 #define STR_LANG_INDEX		    0x00
 #define STR_MANUFACTURER_INDEX	    0x01
@@ -367,6 +383,7 @@ static int fastboot_init_mmc_sata_ptable(void)
 		}
 	}
 
+#if 0
 	memset((char *)ptable, 0,
 		    sizeof(fastboot_ptentry) * (PTN_RECOVERY_INDEX + 1));
 	/* MBR */
@@ -397,7 +414,9 @@ static int fastboot_init_mmc_sata_ptable(void)
 	for (i = 0; i <= PTN_RECOVERY_INDEX; i++)
 		fastboot_flash_add_ptn(&ptable[i]);
 
+
 	return 0;
+#endif
 }
 #endif
 
@@ -639,10 +658,183 @@ int fastboot_usb_recv(u8 *buf, int count)
 	return len;
 }
 
+
+unsigned long gdwFastboot_connection_timeout_us=0;
+unsigned long long gu64_Fastboot_connection_timeout_tick;
+
+unsigned long fastboot_connection_timeout_us_set(unsigned long dwTimeoutSetUS)
+{
+	unsigned long dwFBTimeoutOld=gdwFastboot_connection_timeout_us;
+	unsigned long long u64_ticks;
+
+	if(0==dwTimeoutSetUS) {
+		gdwFastboot_connection_timeout_us = 0;
+		gu64_Fastboot_connection_timeout_tick=0;
+		printf("%s() reset timeout !!\n",__FUNCTION__);
+	}
+	else {
+		u64_ticks = mx6_us_to_tick((unsigned long long)dwTimeoutSetUS);
+		gu64_Fastboot_connection_timeout_tick = get_ticks() + u64_ticks;
+		gdwFastboot_connection_timeout_us = dwTimeoutSetUS;
+		printf("%s() timeout tick =%llu!!\n",__FUNCTION__,
+				gu64_Fastboot_connection_timeout_tick);
+	}
+
+	return dwFBTimeoutOld;
+}
+
+int fastboot_connection_check_timeouted(void)
+{
+	unsigned long long u64_current_tick;
+	if(0==gu64_Fastboot_connection_timeout_tick) {
+		//printf("%s() timeout tick=0\n",__FUNCTION__);
+		return 0;
+	}
+
+	u64_current_tick = get_ticks();
+	if(u64_current_tick>=gu64_Fastboot_connection_timeout_tick) {
+		printf("%s() timeout occured !!\n",__FUNCTION__);
+		return 1;
+	}
+	else {
+		//printf("%s() current tick=%llu<%llu !!\n",__FUNCTION__,u64_current_tick,gu64_Fastboot_connection_timeout_tick);
+		return 0;
+	}
+}
+
+
 int fastboot_getvar(const char *rx_buffer, char *tx_buffer)
 {
+	int iRet = 0;
 	/* Place board specific variables here */
-	return 0;
+	//printf("%s: rx_buffer=\"%s\"",__FUNCTION__,rx_buffer);
+	if (!strcmp(rx_buffer, "version")) {
+		strcpy(tx_buffer, FASTBOOT_VERSION);
+	}
+	else if (!strcmp(rx_buffer,"product")) {
+		strcpy(tx_buffer, fastboot_interface->product_name);
+	} 
+	else if (!strcmp(rx_buffer,"serialno")) {
+		strcpy(tx_buffer, fastboot_interface->serial_no);
+	}
+	else if (!strcmp(rx_buffer,"downloadsize")) {
+		sprintf(tx_buffer, "0x%x",fastboot_interface->transfer_buffer_size);
+	}
+	else if(0==memcmp((char*)rx_buffer,"partition-type:",15)) {
+		char *pszPartitionName=rx_buffer+15;
+		fastboot_ptentry *ptn;
+		char szTypeA[][5]={"bptn","ptbl"};
+
+#if 0
+		// 
+		// system will crash maybe because of tx_buffer size .
+		// 
+		if(0==strcmp(pszPartitionName,"all")) {
+			int iPTNTotal=fastboot_flash_get_ptn_count();
+			int i;
+
+			printf("%s():fastboot ptn total=%d\n",__FUNCTION__,iPTNTotal);
+			tx_buffer[0]='\0';
+			for(i=0;i<iPTNTotal;i++) {
+				ptn = fastboot_flash_get_ptn(i);
+				if(!ptn) {
+					break;
+				}
+				printf("[%d]ptn%d \"%s\"\n",i,ptn->partition_id,ptn->name);
+      	strcat(tx_buffer,ptn->name);
+      	strcat(tx_buffer,":");
+    		if (0==ptn->partition_id) {
+      		strcat(tx_buffer,szTypeA[0]);
+    		}
+				else {
+      		strcat(tx_buffer,szTypeA[1]);
+				}
+      	strcat(tx_buffer,"\n");
+			}
+
+		}
+		else 
+#endif
+		{
+			ptn = fastboot_flash_find_ptn(pszPartitionName);
+			if(ptn) {
+    		if (0==ptn->partition_id) {
+      		sprintf(tx_buffer,"%s",szTypeA[0]);
+    		}
+				else {
+      		sprintf(tx_buffer,"%s",szTypeA[1]);
+				}
+			}
+			else {
+				// 
+				printf("\"%s\" not found!\n",pszPartitionName);
+				iRet = 1;
+			}
+		}
+	}
+#if 1//[
+	else if(0==memcmp((char*)rx_buffer,"hwcfg.PCB",9)) {
+		sprintf(tx_buffer,"[0] PCB=0x%02X",gptNtxHwCfg->m_val.bPCB);
+	}
+	else if(0==memcmp((char*)rx_buffer,"hwcfg.DisplayResolution",23)) {
+		sprintf(tx_buffer,"[0] PCB=0x%02X",gptNtxHwCfg->m_val.bDisplayResolution);
+	}
+#else //][!
+	else if(0==memcmp((char*)rx_buffer,"hwcfg.",6)) {
+		char *pszHWCfg_FieldName=rx_buffer+6;
+		int iFieldIdx ;
+		HwConfigField tHwCfgFldDef;
+		int iChk;
+
+
+		iFieldIdx = NtxHwCfg_FldName2Idx(pszHWCfg_FieldName);
+		if(iFieldIdx>=0) {
+			iChk = NtxHwCfg_GetFldVal(iFieldIdx,&tHwCfgFldDef);
+			if(iChk<0) {
+				sprintf(tx_buffer,"Get hwconfig field %s @idx%d definition failed !",
+						pszHWCfg_FieldName,iFieldIdx);
+				iRet = 1;
+			}
+			else {
+				char *pszHwCfgFieldStrVal=0;
+				unsigned char bHwCfgFieldVal=0;
+
+				if(FIELD_TYPE_IDXSTR==tHwCfgFldDef.wFieldType) {
+					pszHwCfgFieldStrVal=NtxHwCfg_GetCfgFldStrVal(gptNtxHwCfg,iFieldIdx);
+				}
+
+				if(pszHwCfgFieldStrVal) {
+					sprintf(tx_buffer,"[%d] %s=\"%s\"",iFieldIdx,
+							pszHWCfg_FieldName,pszHwCfgFieldStrVal);
+				}
+				else {
+					iChk=NtxHwCfg_GetCfgFldVal(gptNtxHwCfg,iFieldIdx);
+					if(iChk>=0) {
+						bHwCfgFieldVal = (unsigned char)iChk;
+						sprintf(tx_buffer,"[%d] %s=0x%02X",iFieldIdx,
+							pszHWCfg_FieldName,bHwCfgFieldVal);
+					}
+					else {
+						sprintf(tx_buffer,"Get field \"%s\" value failed !",pszHWCfg_FieldName);
+						iRet = 1;
+					}
+				}
+			}
+		}
+		else {
+			sprintf(tx_buffer,"No such field name : \"%s\"",pszHWCfg_FieldName);
+			iRet = 1;
+		}
+		
+	}
+#endif//]
+	else {
+		printf("unknown var \n");
+		sprintf(tx_buffer,"unknown var");
+		iRet = 1;
+	}
+
+	return iRet;
 }
 
 int fastboot_poll()
@@ -785,6 +977,262 @@ static int fastboot_cdc_setup(struct usb_device_request *request, struct urb *ur
 /* export to lib_arm/board.c */
 void check_fastboot_mode(void)
 {
+#if 1
+	extern ntx_check_droid_fastboot_keys(void);
+	if(ntx_check_droid_fastboot_keys()|| 
+	   fastboot_check_and_clean_flag()) 
+	{
+		run_command("fastboot q",0);
+	}	
+#else
 	if (fastboot_check_and_clean_flag())
 		do_fastboot(NULL, 0, 0, 0);
+#endif
+}
+
+u8 fastboot_debug_level;
+void fastboot_dump_memory(u32 *ptr, u32 len)
+{
+    u32 i;
+    for (i = 0; i < len; i++) {
+	DBG_DEBUG("0x%p: %08x %08x %08x %08x\n", ptr,
+			*ptr, *(ptr+1), *(ptr+2), *(ptr+3));
+	ptr += 4;
+    }
+}
+
+#define FASTBOOT_STS_CMD 0
+#define FASTBOOT_STS_CMD_WAIT 1
+#define FASTBOOT_STS_DATA 2
+#define FASTBOOT_STS_DATA_WAIT 3
+
+static u8 fastboot_status;
+static u8 g_fastboot_recvbuf[MAX_PAKET_LEN];
+static u8 g_fastboot_sendbuf[MAX_PAKET_LEN];
+
+static u32 g_fastboot_datalen;
+static u8 g_fastboot_outep_index, g_fastboot_inep_index;
+static u8 g_usb_connected;
+
+void fastboot_get_ep_num(u8 *in, u8 *out)
+{
+    if (out)
+	*out = rx_endpoint + EP0_OUT_INDEX + 1;
+    if (in)
+	*in = tx_endpoint + EP0_IN_INDEX + 1;
+}
+
+static void fastboot_data_handler(u32 len, u8 *recvbuf)
+{
+    if (len != g_fastboot_datalen)
+	DBG_ERR("Fastboot data recv error, want:%d, recv:%d\n",
+					g_fastboot_datalen, len);
+    sprintf((char *)g_fastboot_sendbuf, "OKAY");
+    udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf, 4, NULL);
+    fastboot_status = FASTBOOT_STS_CMD;
+}
+
+static void fastboot_cmd_handler(u32 len, u8 *recvbuf)
+{
+    u32 *databuf = (u32 *)CONFIG_FASTBOOT_TRANSFER_BUF;
+
+
+		if(len>0) {
+			fastboot_connection_timeout_us_set(0);
+		}
+
+    if (len > sizeof(g_fastboot_recvbuf)) {
+	DBG_ERR("%s, recv len=%d error\n", __func__, len);
+	return;
+    }
+    recvbuf[len] = 0;
+    DBG_ALWS("\nFastboot Cmd, len=%u, %s\n", len, recvbuf);
+
+    if (memcmp(recvbuf, "download:", 9) == 0) {
+	g_fastboot_datalen = simple_strtoul((const char *)recvbuf + 9,
+								NULL, 16);
+	if (g_fastboot_datalen > CONFIG_FASTBOOT_TRANSFER_BUF_SIZE) {
+		DBG_ERR("Download too much data\n");
+		sprintf((char *)g_fastboot_sendbuf, "FAIL");
+		udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+								4, NULL);
+		fastboot_status = FASTBOOT_STS_CMD;
+	} else {
+		sprintf((char *)g_fastboot_sendbuf, "DATA%08x",
+							g_fastboot_datalen);
+		udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+								12, NULL);
+		DBG_ALWS("Fastboot is receiveing data...\n");
+		udc_recv_data(g_fastboot_outep_index, (u8 *)databuf,
+				g_fastboot_datalen, fastboot_data_handler);
+		fastboot_status = FASTBOOT_STS_DATA_WAIT;
+	}
+    } else if (memcmp(recvbuf, "flash:", 6) == 0) {
+		if (g_fastboot_datalen ==
+			fastboot_write_mmc(recvbuf+6, g_fastboot_datalen)) {
+			DBG_ALWS("Fastboot write OK, send OKAY...\n");
+			sprintf((char *)g_fastboot_sendbuf, "OKAY");
+			udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+								4, NULL);
+		} else {
+			DBG_ERR("Fastboot write error, write 0x%x\n",
+							g_fastboot_datalen);
+			sprintf((char *)g_fastboot_sendbuf, "FAIL");
+			udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+								4, NULL);
+		}
+		g_fastboot_datalen = 0;
+		fastboot_status = FASTBOOT_STS_CMD;
+    } else if (memcmp(recvbuf, "reboot", 6) == 0) {
+			sprintf((char *)g_fastboot_sendbuf, "OKAY");
+			udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+								4, NULL);
+			udelay(100000); /* 1 sec */
+
+			do_reset(NULL, 0, 0, NULL);
+
+	} else if (memcmp(recvbuf, "getvar:", 7) == 0) {
+        memset((char *)g_fastboot_sendbuf, 0, MAX_PAKET_LEN);
+		sprintf((char *)g_fastboot_sendbuf, "OKAY");
+
+		if (!strcmp((char *)recvbuf + 7, "version")) {
+			strcpy((char *)g_fastboot_sendbuf + 4, FASTBOOT_VERSION);
+			
+		} else if (!strcmp((char *)recvbuf + 7, "product")) {
+			strcpy((char *)g_fastboot_sendbuf + 4, CONFIG_FASTBOOT_PRODUCT_NAME_STR);
+
+		} else if (!strcmp((char *)recvbuf + 7, "serialno")) {
+			strcpy((char *)g_fastboot_sendbuf + 4, CONFIG_FASTBOOT_SERIAL_NUM);
+
+		} else if (!strcmp((char *)recvbuf + 7, "downloadsize")) {
+			sprintf((char *)g_fastboot_sendbuf + 4, "0x%x", g_fastboot_datalen);
+		} else {
+			fastboot_getvar(recvbuf + 7, (char *)g_fastboot_sendbuf + 4);
+		}
+		udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf, strlen(g_fastboot_sendbuf), NULL);
+		g_fastboot_datalen = 0;
+		fastboot_status = FASTBOOT_STS_CMD;
+			
+	} else if (memcmp(recvbuf, "boot", 4) == 0) {
+		if ((g_fastboot_datalen) &&
+		    (CFG_FASTBOOT_MKBOOTIMAGE_PAGE_SIZE <
+			    g_fastboot_datalen)) {
+			char start[32];
+			char *booti_args[4] = {"booti",  NULL, "boot", NULL};
+
+			/*
+			 * Use this later to determine if a command line was passed
+			 * for the kernel.
+			 */
+			/* struct fastboot_boot_img_hdr *fb_hdr = */
+			/* 	(struct fastboot_boot_img_hdr *) interface.transfer_buffer; */
+
+			/* Skip the mkbootimage header */
+			/* image_header_t *hdr = */
+			/* 	(image_header_t *) */
+			/* 	&interface.transfer_buffer[CFG_FASTBOOT_MKBOOTIMAGE_PAGE_SIZE]; */
+
+			booti_args[1] = start;
+			sprintf(start, "0x%x", CONFIG_FASTBOOT_TRANSFER_BUF);
+
+			/* Execution should jump to kernel so send the response
+			   now and wait a bit.  */
+			sprintf((char *)g_fastboot_sendbuf, "OKAY");
+			udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+								4, NULL);
+
+
+			printf("Booting kernel...\n");
+
+
+			/* Reserve for further use, this can
+			 * be more convient for developer. */
+			/* if (strlen ((char *) &fb_hdr->cmdline[0])) */
+			/* 	set_env("bootargs", (char *) &fb_hdr->cmdline[0]); */
+
+			/* boot the boot.img */
+			do_booti(NULL, 0, 3, booti_args);
+		}
+		sprintf((char *)g_fastboot_sendbuf, "FAILinvalid boot image");
+		udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+							4, NULL);
+		g_fastboot_datalen = 0;
+		fastboot_status = FASTBOOT_STS_CMD;
+		
+    } else {
+		DBG_ERR("Not support command:%s\n", recvbuf);
+		sprintf((char *)g_fastboot_sendbuf, "FAIL");
+		udc_send_data(g_fastboot_inep_index, g_fastboot_sendbuf,
+								4, NULL);
+		g_fastboot_datalen = 0;
+		fastboot_status = FASTBOOT_STS_CMD;
+    }
+}
+
+static struct cmd_fastboot_interface interface = {
+    .rx_handler            = NULL,
+    .reset_handler         = NULL,
+    .product_name          = NULL,
+    .serial_no             = NULL,
+    .nand_block_size       = 0,
+    .transfer_buffer       = (unsigned char *)0xffffffff,
+    .transfer_buffer_size  = 0,
+};
+
+/*
+ * fastboot main process, only support 'download', 'flash' 'reboot' command now
+ *
+ * @debug  control debug level, support three level now,
+ *	   0(normal), 1(debug), 2(info), default is 0
+ */
+void fastboot_quick(u8 debug)
+{
+	int ifastboot_break = 0;
+    u32 plug_cnt = 0;
+	printf("%s(%d) enter\n",__FUNCTION__,(int)debug);
+
+    if (debug > 2)
+	debug = 0;
+    fastboot_debug_level = debug;
+
+    fastboot_init(&interface);
+    fastboot_get_ep_num(&g_fastboot_inep_index, &g_fastboot_outep_index);
+    DBG_INFO("g_fastboot_inep_index=%d, g_fastboot_outep_index=%d\n",
+		g_fastboot_inep_index, g_fastboot_outep_index);
+    while (++plug_cnt) {
+	fastboot_status = FASTBOOT_STS_CMD;
+	udc_hal_data_init();
+	udc_run();
+	if (plug_cnt > 1)
+		DBG_ALWS("wait usb cable into the connector!\n");
+	udc_wait_connect();
+	g_usb_connected = 1;
+	if (plug_cnt > 1)
+		DBG_ALWS("USB Mini b cable Connected!\n");
+	while (g_usb_connected) {
+		int usb_irq = udc_irq_handler();
+		if (usb_irq > 0) {
+			if (fastboot_status == FASTBOOT_STS_CMD) {
+				memset(g_fastboot_recvbuf, 0 , MAX_PAKET_LEN);
+				udc_recv_data(g_fastboot_outep_index,
+					g_fastboot_recvbuf, MAX_PAKET_LEN,
+					fastboot_cmd_handler);
+				fastboot_status = FASTBOOT_STS_CMD_WAIT;
+			}
+		}
+		if (usb_irq < 0)
+			g_usb_connected = 0;
+
+		if(fastboot_connection_check_timeouted()) {
+			printf("fastboot connection timeouted !!!");
+			ifastboot_break = 1;
+			break;
+		}
+	}
+			
+			if(ifastboot_break) {
+				break;
+			}
+    }
+	printf("%s exit\n",__FUNCTION__);
 }

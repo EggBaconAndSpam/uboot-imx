@@ -440,4 +440,38 @@ enum {
 	EPDC_VERSION_STEP_OFFSET = 0,
 };
 
+
+#ifdef ADVANCE_WAVEFORM_FILE//[
+struct waveform_data_header {
+	unsigned int wi0;
+	unsigned int wi1;
+	unsigned int wi2;
+	unsigned int wi3;
+	unsigned int wi4;
+	unsigned int wi5;
+	unsigned int wi6;
+	unsigned int xwia:24;
+	unsigned int cs1:8;
+	unsigned int wmta:24;
+	unsigned int fvsn:8;
+	unsigned int luts:8;
+	unsigned int mc:8;
+	unsigned int trc:8;
+	unsigned int awv:8;
+	unsigned int eb:8;
+	unsigned int sb:8;
+	unsigned int reserved0_1:8;
+	unsigned int reserved0_2:8;
+	unsigned int reserved0_3:8;
+	unsigned int reserved0_4:8;
+	unsigned int reserved0_5:8;
+	unsigned int cs2:8;
+};
+struct mxcfb_waveform_data_file {
+	struct waveform_data_header wdh;
+	unsigned long *data;	/* Temperature Range Table + Waveform Data */
+};
+#endif //]ADVANCE_WAVEFORM_FILE	
+
+
 #endif

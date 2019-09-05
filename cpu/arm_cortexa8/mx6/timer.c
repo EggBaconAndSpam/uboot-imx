@@ -130,6 +130,14 @@ void reset_timer(void)
 	reset_timer_masked();
 }
 
+
+unsigned long long mx6_us_to_tick(unsigned long long u64US)
+{
+	unsigned long long u64Tick;
+	u64Tick = us_to_tick(u64US);
+	return u64Tick;
+}
+
 unsigned long long get_ticks(void)
 {
 	ulong now = GPTCNT; /* current tick value */

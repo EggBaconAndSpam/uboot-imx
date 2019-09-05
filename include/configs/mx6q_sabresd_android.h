@@ -24,6 +24,7 @@
 
 #include "mx6q_sabresd.h"
 
+#if 0
 #define CONFIG_USB_DEVICE
 #define CONFIG_IMX_UDC		       1
 #define CONFIG_FASTBOOT		       1
@@ -42,9 +43,10 @@
 *   to receive the system.img*/
 #define CONFIG_FASTBOOT_TRANSFER_BUF	0x2c000000
 #define CONFIG_FASTBOOT_TRANSFER_BUF_SIZE 0x14000000 /* 320M byte */
+#endif
 
 #define CONFIG_CMD_BOOTI
-#define CONFIG_ANDROID_RECOVERY
+//#define CONFIG_ANDROID_RECOVERY
 /* which mmc bus is your main storage ? */
 #define CONFIG_ANDROID_MAIN_MMC_BUS 3
 #define CONFIG_ANDROID_BOOT_PARTITION_MMC 1

@@ -38,8 +38,9 @@
 #define CONFIG_SKIP_RELOCATE_UBOOT
 
 #define CONFIG_ARCH_CPU_INIT
-#undef CONFIG_ARCH_MMU /* disable MMU first */
-#define CONFIG_L2_OFF  /* disable L2 cache first*/
+#define CONFIG_ARCH_MMU 
+//#undef CONFIG_ARCH_MMU /* disable MMU first */
+//#define CONFIG_L2_OFF  /* disable L2 cache first*/
 
 #define CONFIG_MX6_HCLK_FREQ	24000000
 
@@ -74,6 +75,17 @@
 #define CONFIG_CONS_INDEX		1
 #define CONFIG_BAUDRATE			115200
 #define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
+
+#define CONFIG_MXC_SDMA
+#define CONFIG_CMD_SDMA
+#define CONFIG_MMC_DMA
+
+#define CONFIG_MEM_MALLOC_INIT_FAST
+//#define CONFIG_MMC_BUILTIN_ENV
+
+//#define CONFIG_CONSOLE_QUIET 4096
+//#define CONFIG_CMD_PUTS         1
+
 
 /***********************************************************
  * Command definition
@@ -145,7 +157,7 @@
 #define CONFIG_SYS_CBSIZE		1024	/* Console I/O Buffer Size */
 /* Print Buffer Size */
 #define CONFIG_SYS_PBSIZE (CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
-#define CONFIG_SYS_MAXARGS	16	/* max number of command args */
+#define CONFIG_SYS_MAXARGS	32	/* max number of command args */
 #define CONFIG_SYS_BARGSIZE CONFIG_SYS_CBSIZE /* Boot Argument Buffer Size */
 
 #define CONFIG_SYS_MEMTEST_START	0x10000000	/* memtest works on */
@@ -225,9 +237,12 @@
 	#define CONFIG_SYS_FSL_USDHC_NUM        4
 	#define CONFIG_SYS_FSL_ESDHC_ADDR       0
 	#define CONFIG_SYS_MMC_ENV_DEV  2
+        //#define CONFIG_NOFS             1
+#ifndef CONFIG_NOFS
 	#define CONFIG_DOS_PARTITION	1
 	#define CONFIG_CMD_FAT		1
 	#define CONFIG_CMD_EXT2		1
+#endif
 
 	/* detect whether SD1, 2, 3, or 4 is boot device */
 	#define CONFIG_DYNAMIC_MMC_DEVNO

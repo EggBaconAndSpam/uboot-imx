@@ -569,6 +569,26 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	int		ret;
 	boot_os_fn	*boot_fn;
 
+
+	// gallen 20120720 add [
+	extern void ntx_prebootm(void);
+	extern unsigned char *gpbKernelAddr; // kernel address . 
+	//extern unsigned long gdwKernelSize; // kernel size in byte .
+	extern unsigned char *gpbRDaddr; // initrd address . 
+	//extern unsigned long gdwRDsize; // initrd size in byte .
+	char cKernelAddrA[20],cRDAddrA[20];
+	char *pszKBinsA[3] = {"bootm",cKernelAddrA,cRDAddrA};
+
+		
+	ntx_prebootm();
+
+	sprintf(cKernelAddrA,"0x%08X",(unsigned long)gpbKernelAddr);	
+	sprintf(cRDAddrA,"0x%08X",(unsigned long)gpbRDaddr);	
+	//printf("kernel @ %s , initrd @ %s\n",cKernelAddrA,cRDAddrA);
+	
+	// ] gallen 20120720 add 
+
+
 	/* relocate boot function table */
 	if (!relocated) {
 		int i;
@@ -605,6 +625,24 @@ int do_bootm (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	}
 
 #endif
+
+	// gallen add 20120720 [
+	else if( gpbRDaddr && gpbKernelAddr) {
+		argc = 3;
+		argv = pszKBinsA ;
+	}
+
+
+	#if 0 // debug info ...
+	printf("argc=%d\n",argc);
+	{
+		int i;
+		for(i=0;i<argc;i++) {
+			printf("argv[%d]=%s\n",i,argv[i]);
+		}
+	}
+	#endif
+	// ] gallen add 20120720
 
 	if (bootm_start(cmdtp, flag, argc, argv))
 		return 1;
@@ -1521,9 +1559,11 @@ int do_booti(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	char *ptn = "boot";
 	int mmcc = -1;
 	boot_img_hdr *hdr = (void *)boothdr;
+	extern void ntx_prebooti(char *I_pszKernCmdLine);
 
 	if (argc < 2)
 		return -1;
+
 
 	if (!strncmp(argv[1], "mmc", 3))
 		mmcc = simple_strtoul(argv[1]+3, NULL, 10);
@@ -1665,6 +1705,8 @@ int do_booti(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		memmove((void *) hdr->kernel_addr, (void *)kaddr, hdr->kernel_size);
 		memmove((void *) hdr->ramdisk_addr, (void *)raddr, hdr->ramdisk_size);
 	}
+
+	ntx_prebooti(hdr->cmdline);
 
 	printf("kernel   @ %08x (%d)\n", hdr->kernel_addr, hdr->kernel_size);
 	printf("ramdisk  @ %08x (%d)\n", hdr->ramdisk_addr, hdr->ramdisk_size);

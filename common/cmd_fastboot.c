@@ -574,7 +574,7 @@ static int write_to_ptn(struct fastboot_ptentry *ptn)
 
 					/* download's address only advance
 					   if last write was successful */
-					sprintf(addr, "0x%x",
+					sprintf(addr, "0x%p",
 						interface.transfer_buffer +
 						(i * interface.nand_block_size));
 
@@ -640,7 +640,8 @@ static int write_to_ptn(struct fastboot_ptentry *ptn)
 					/* Check if there is enough space */
 					if (ok_start + download_bytes <=
 					    ptn->start + ptn->length) {
-						sprintf(addr,    "0x%x", interface.transfer_buffer);
+						sprintf(addr,    "0x%p",
+						interface.transfer_buffer);
 						sprintf(wstart,  "0x%x", ok_start);
 						sprintf(wlength, "0x%x", download_bytes);
 
@@ -675,7 +676,7 @@ static int write_to_ptn(struct fastboot_ptentry *ptn)
 			}
 		} else {
 			/* Normal case */
-			sprintf(addr,    "0x%x", interface.transfer_buffer);
+			sprintf(addr,    "0x%p", interface.transfer_buffer);
 			sprintf(wstart,  "0x%x", ptn->start +
 				(repeat * ptn->length));
 			sprintf(wlength, "0x%x", download_bytes);
@@ -730,6 +731,50 @@ static int tx_handler(void)
 		}
 	}
 	return upload_error;
+}
+
+// Yian, add for RAW data header update
+static int ntx_header_update (unsigned int block_s, unsigned int bytes)
+{
+	char head_block[512] = {0};
+	char source_r[32], dest_r[32];
+	char *ptr;
+	char magic[4] = {0xFF, 0xF5, 0xAF, 0xFF};
+	long swapPattern = 0x12345678;
+	char *mmc_cmd[5] = {"mmc", NULL, NULL, NULL, "0x01"};
+
+	//read header block, the header always before the RAW data
+	mmc_cmd[1] = "read";
+	mmc_cmd[2] = dest_r;
+	mmc_cmd[3] = source_r;
+
+	sprintf(dest_r, "0x%x", (unsigned int)head_block);
+	sprintf(source_r, "0x%x", block_s-1);
+
+	if (do_mmcops(NULL, 0, 5, mmc_cmd)) {
+		printf("Reading Header Block '%d' FAILED!\n", block_s-1);
+		return 0;
+	} else {
+		printf("Reading Header Block '%d' DONE!\n", block_s-1);
+	}
+	//prepare header info
+	ptr = head_block + 0x1F0;
+	memcpy(ptr, magic, 4);
+	ptr += 4;
+	memcpy(ptr, &swapPattern, 4);
+	ptr += 4;
+	memcpy(ptr, &bytes, 4);
+
+	//write header block
+	mmc_cmd[1] = "write";
+
+	if (do_mmcops(NULL, 0, 5, mmc_cmd)) {
+		printf("Write Header Block '%d' FAILED!\n", block_s-1);
+		return 0;
+	} else {
+		printf("Write Header Block '%d' DONE!\n", block_s-1);
+	}
+	return 1;
 }
 
 static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
@@ -862,27 +907,7 @@ static int rx_handler (const unsigned char *buffer, unsigned int buffer_size)
 			strcpy(response, "OKAY");
 
 			temp_len = strlen("getvar:");
-			if (!strcmp(cmdbuf + temp_len, "version")) {
-				strcpy(response + 4, FASTBOOT_VERSION);
-			} else if (!strcmp(cmdbuf + temp_len,
-					     "product")) {
-				if (interface.product_name)
-					strcpy(response + 4, interface.product_name);
-
-			} else if (!strcmp(cmdbuf + temp_len,
-					     "serialno")) {
-				if (interface.serial_no)
-					strcpy(response + 4, interface.serial_no);
-
-			} else if (!strcmp(cmdbuf + temp_len,
-					    "downloadsize")) {
-				if (interface.transfer_buffer_size)
-					sprintf(response + 4, "0x%x",
-						interface.transfer_buffer_size);
-			} else {
-				fastboot_getvar(cmdbuf + 7, response + 4);
-			}
-			ret = 0;
+			ret = fastboot_getvar(cmdbuf + 7, response + 4);
 
 		}
 
@@ -1184,6 +1209,7 @@ mmc_ops:
 					char *mmc_write[5] = {"mmc", "write",
 						NULL, NULL, NULL};
 					char *mmc_dev[4] = {"mmc", "dev", NULL, NULL};
+					int headerUpdated = 0;
 
 					mmc_dev[2] = slot_no;
 					mmc_dev[3] = part_no;
@@ -1206,18 +1232,48 @@ mmc_ops:
 					sprintf(length, "0x%x", temp);
 
 					printf("Initializing '%s'\n", ptn->name);
-					if (do_mmcops(NULL, 0, 4, mmc_dev))
+					if (do_mmcops(NULL, 0, 3, mmc_dev))
 						sprintf(response, "FAIL:Init of MMC card");
 					else
 						sprintf(response, "OKAY");
 
-					printf("Writing '%s'\n", ptn->name);
-					if (do_mmcops(NULL, 0, 5, mmc_write)) {
+					// Yian add for skip uboot header
+					if (memcmp(ptn->name, "bootloader", 10) == 0)
+					{
+						sprintf(source, "0x%x", (unsigned int)interface.transfer_buffer+MMC_SATA_BLOCK_SIZE*2);
+						sprintf(length, "0x%x", temp-2);
+					}
+					// Yian add for create ntx header
+					if ((memcmp(ptn->name, "waveform", 8) == 0) ||
+					    (memcmp(ptn->name, "hwcfg", 5) == 0))
+					{
+						headerUpdated = ntx_header_update(ptn->start, download_bytes);
+					}
+					else
+					{
+						headerUpdated = 1;
+					}
+					if(!headerUpdated)
+					{
 						printf("Writing '%s' FAILED!\n", ptn->name);
-						sprintf(response, "FAIL: Write partition");
-					} else {
-						printf("Writing '%s' DONE!\n", ptn->name);
-						sprintf(response, "OKAY");
+						sprintf(response, "FAIL: Write partition header");
+					}
+                    // Yian protect uboot & mbr
+                    else if ((ptn->start == 0) && !(memcmp(ptn->name, "mbr", 3) == 0))
+                    {
+                        printf("Writing '%s' FAILED!\n", ptn->name);
+						sprintf(response, "FAIL: Partition addr is 0");
+                    }
+					else
+					{
+						printf("Writing '%s'\n", ptn->name);
+						if (do_mmcops(NULL, 0, 5, mmc_write)) {
+							printf("Writing '%s' FAILED!\n", ptn->name);
+							sprintf(response, "FAIL: Write partition");
+						} else {
+							printf("Writing '%s' DONE!\n", ptn->name);
+							sprintf(response, "OKAY");
+						}
 					}
 				}
 
@@ -1559,6 +1615,22 @@ int do_fastboot (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 	long timeout_seconds = -1;
 	int continue_from_disconnect = 0;
 
+	// Yian: turn on Red LED to notify user, fastboot is running
+	_led_R(1);
+	_led_G(1);
+	_led_B(1);
+
+	#if 1
+	// Yian: avoid micro-p cut power
+	ntxup_init();
+	// Yian: force enter quick mode
+    	char *fastboot_q[2] = {"fastboot", "q"};
+    	argc = 2;
+	argv = fastboot_q;
+	#endif
+
+	fastboot_flash_dump_ptn();
+
 	/*
 	 * Place the runtime partitions at the end of the
 	 * static paritions.  First save the start off so
@@ -1607,20 +1679,35 @@ int do_fastboot (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 
 	/* Time out */
 	if (2 == argc) {
-		long try_seconds;
-		char *try_seconds_end;
-		/* Check for timeout */
-		try_seconds = simple_strtol(argv[1],
-					    &try_seconds_end, 10);
-		if ((try_seconds_end != argv[1]) &&
-		    (try_seconds >= 0)) {
-			check_timeout = 1;
-			timeout_seconds = try_seconds;
-			printf("Fastboot inactivity timeout %ld seconds\n", timeout_seconds);
+
+		if (argv[1][0] == 'q') {
+			if ((argv[1][1] >= '0') && (argv[1][1] <= '2'))
+				fastboot_quick(argv[1][1] - '0');
+			else
+				fastboot_quick(0);
+
+			return 0;
 		}
+		else {
+			long try_seconds;
+			char *try_seconds_end;
+			/* Check for timeout */
+			try_seconds = simple_strtol(argv[1],
+							&try_seconds_end, 10);
+			if ((try_seconds_end != argv[1]) &&
+				 (try_seconds >= 0)) {
+				check_timeout = 1;
+				timeout_seconds = try_seconds;
+				printf("Fastboot inactivity timeout %ld seconds\n", timeout_seconds);
+			}
+		}
+
 	}
 
+
+
 	do {
+	
 		continue_from_disconnect = 0;
 
 		/* Initialize the board specific support */
@@ -1694,6 +1781,7 @@ int do_fastboot (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 		/* restart the loop if a disconnect was detected */
 	} while (continue_from_disconnect);
 
+	printf("%s end\n",__FUNCTION__);
 	return ret;
 }
 
@@ -1707,11 +1795,17 @@ U_BOOT_CMD(
 );
 
 
+//#define FASTBOOT_PTN_DBG	1
 /*
  * Android style flash utilties */
 void fastboot_flash_add_ptn(fastboot_ptentry *ptn)
 {
 	if (pcount < MAX_PTN) {
+#ifdef FASTBOOT_PTN_DBG//[
+		printf("%s(%d),adding fastboot part \"%s\",start=%d,len=%d\n",
+				__FUNCTION__,__LINE__,ptn->name,ptn->start,ptn->length);
+#endif //] FASTBOOTDBG
+
 		memcpy(ptable + pcount, ptn, sizeof(fastboot_ptentry));
 		pcount++;
 	}
@@ -1720,6 +1814,11 @@ void fastboot_flash_add_ptn(fastboot_ptentry *ptn)
 void fastboot_flash_dump_ptn(void)
 {
 	unsigned int n;
+
+#ifdef FASTBOOT_PTN_DBG//[
+	printf("%s(%d),dump ptn %d\n",__FUNCTION__,__LINE__,pcount);
+#endif//] FASTBOOTDBG
+
 	for (n = 0; n < pcount; n++) {
 		fastboot_ptentry *ptn = ptable + n;
 		printf("ptn %d name='%s' start=%d len=%d\n",
@@ -1758,6 +1857,81 @@ unsigned int fastboot_flash_get_ptn_count(void)
 	return pcount;
 }
 
+int fastboot_write_mmc(u8 *partition_name, u32 write_len)
+{
+    struct fastboot_ptentry *ptn;
 
+    char source[32], dest[32], length[32];
+    char part_no[32], slot_no[32];
+    unsigned int temp;
+
+    memset(source,  0, sizeof(source));
+    memset(dest,    0, sizeof(dest));
+    memset(length,  0, sizeof(length));
+    memset(part_no, 0, sizeof(part_no));
+    memset(slot_no, 0, sizeof(slot_no));
+
+    char *mmc_write[5] = {"mmc", "write", source, dest, length};
+    char *mmc_dev[4] = {"mmc", "dev", slot_no, part_no};
+
+    if (0 == write_len) {
+	DBG_ERR("WriteMMC with 0 lenght\n");
+	return -1;
+    }
+
+    ptn = fastboot_flash_find_ptn((const char *)partition_name);
+    if (!ptn) {
+	DBG_ERR("Partition:'%s' does not exist\n", ptn->name);
+	return -1;
+    }
+    DBG_DEBUG("PTN, name=%s, start=0x%x, leng=0x%x, flags=0x%x, partid=0x%x\n",
+	ptn->name, ptn->start, ptn->length, ptn->flags, ptn->partition_id);
+
+    sprintf(slot_no, "%d", fastboot_devinfo.dev_id);
+    sprintf(part_no, "%d", ptn->partition_id);
+
+    DBG_ALWS("Init MMC%s(%s)...\n", slot_no,  ptn->name);
+    if (do_mmcops(NULL, 0, 3, mmc_dev)) {
+	DBG_ERR("MMC%s(%s) init fail\n", slot_no, ptn->name);
+	return -1;
+    } else {
+	DBG_ALWS("MMC%s(%s) init done\n", slot_no, ptn->name);
+    }
+
+#define MMC_SATA_BLOCK_SIZE 512
+    sprintf(source, "0x%x", CONFIG_FASTBOOT_TRANSFER_BUF);
+    sprintf(dest, "0x%x", ptn->start);
+    temp = (write_len + MMC_SATA_BLOCK_SIZE - 1) / MMC_SATA_BLOCK_SIZE;
+    sprintf(length, "0x%x", temp);
+
+    DBG_ALWS("Writing MMC%s(%s)...", slot_no, ptn->name);
+
+	// Yian add for skip uboot header
+	if (memcmp(ptn->name, "bootloader", 10) == 0)
+	{
+		sprintf(source, "0x%x", CONFIG_FASTBOOT_TRANSFER_BUF+MMC_SATA_BLOCK_SIZE*2);
+		sprintf(length, "0x%x", temp-2);
+	}
+	// Yian add for create ntx header
+	if ((memcmp(ptn->name, "waveform", 8) == 0) ||
+		(memcmp(ptn->name, "logo", 4) == 0) ||
+	    (memcmp(ptn->name, "hwcfg", 5) == 0)||
+			(memcmp(ptn->name, "kernel", 6) == 0))
+	{
+		if(ntx_header_update(ptn->start, write_len) == 0)
+		{
+		    DBG_ERR("MMC%s(%s) write header fail\n", slot_no, ptn->name);
+		    return -1;
+		}
+	}
+
+    if (do_mmcops(NULL, 0, 5, mmc_write)) {
+	DBG_ERR("MMC%s(%s) write fail\n", slot_no, ptn->name);
+	return -1;
+    } else {
+	DBG_ALWS("MMC%s(%s) write done\n", slot_no, ptn->name);
+	return write_len;
+    }
+}
 
 #endif	/* CONFIG_FASTBOOT */

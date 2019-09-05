@@ -198,7 +198,7 @@ endif
 LIBS += lib_$(ARCH)/lib$(ARCH).a
 LIBS += fs/cramfs/libcramfs.a fs/fat/libfat.a fs/fdos/libfdos.a fs/jffs2/libjffs2.a \
 	fs/reiserfs/libreiserfs.a fs/ext2/libext2fs.a fs/yaffs2/libyaffs2.a \
-	fs/ubifs/libubifs.a
+	fs/ubifs/libubifs.a fs/ext4/libext4fs.a
 LIBS += net/libnet.a
 LIBS += disk/libdisk.a
 LIBS += drivers/bios_emulator/libatibiosemu.a
@@ -3376,6 +3376,7 @@ mx6sl_arm2_iram_config	: unconfig
 		  echo "... with iram configuration" ; \
 		}
 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx6sl_arm2 freescale mx6
+
 mx6sl_evk_config		\
 mx6sl_evk_android_config		\
 mx6sl_evk_mfg_config	\
@@ -3385,6 +3386,48 @@ mx6sl_evk_iram_config	: unconfig
 		  echo "... with iram configuration" ; \
 		}
 	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx6sl_evk freescale mx6
+
+
+mx6sl_ntx_lpddr2_config		\
+mx6sl_ntx_lpddr2_android_config		\
+mx6sl_ntx_lpddr2_mfg_config	\
+mx6sl_ntx_lpddr2_iram_config	: unconfig
+	@[ -z "$(findstring iram_,$@)" ] || \
+		{ echo "TEXT_BASE = 0x00907000" >$(obj)board/freescale/mx6sl_ntx/config.tmp ; \
+		  echo "... with iram configuration" ; \
+		}
+	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx6sl_ntx freescale mx6
+
+mx6sl_ntx_lpddr2_256m_config         \
+mx6sl_ntx_lpddr2_256m_android_config         \
+mx6sl_ntx_lpddr2_256m_mfg_config     \
+mx6sl_ntx_lpddr2_256m_iram_config    : unconfig
+	@[ -z "$(findstring iram_,$@)" ] || \
+		{ echo "TEXT_BASE = 0x00907000" >$(obj)board/freescale/mx6sl_ntx/config.tmp ; \
+			echo "... with iram configuration" ; \
+		}
+	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx6sl_ntx freescale mx6
+
+mx6sl_ntx_lpddr2-MT42L128M32D1_config		\
+mx6sl_ntx_lpddr2-MT42L128M32D1_android_config		\
+mx6sl_ntx_lpddr2-MT42L128M32D1_mfg_config	\
+mx6sl_ntx_lpddr2-MT42L128M32D1_iram_config	: unconfig
+	@[ -z "$(findstring iram_,$@)" ] || \
+		{ echo "TEXT_BASE = 0x00907000" >$(obj)board/freescale/mx6sl_ntx/config.tmp ; \
+		  echo "... with iram configuration" ; \
+		}
+	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx6sl_ntx freescale mx6
+	
+mx6sl_ntx_lpddr2-MT42L128M32D1-256MB_config		\
+mx6sl_ntx_lpddr2-MT42L128M32D1-256MB_android_config		\
+mx6sl_ntx_lpddr2-MT42L128M32D1-256MB_mfg_config	\
+mx6sl_ntx_lpddr2-MT42L128M32D1-256MB_iram_config	: unconfig
+	@[ -z "$(findstring iram_,$@)" ] || \
+		{ echo "TEXT_BASE = 0x00907000" >$(obj)board/freescale/mx6sl_ntx/config.tmp ; \
+		  echo "... with iram configuration" ; \
+		}
+	@$(MKCONFIG) $(@:_config=) arm arm_cortexa8 mx6sl_ntx freescale mx6
+
 
 omap2420h4_config	: unconfig
 	@$(MKCONFIG) $(@:_config=) arm arm1136 omap2420h4 NULL omap24xx

@@ -424,4 +424,17 @@ MXC_DCD_ITEM(90, MMDC_P0_BASE_ADDR + 0x404, 0x00011006)
 
 #endif
 
+#if defined(CONFIG_MMC_BUILTIN_ENV)
+	.org	CONFIG_ENV_OFFSET
+	.globl builtin_environemnt_begin
+builtin_environemnt_begin:
+	.word	0xffffffff,0xffffffff
+	.space	CONFIG_ENV_SIZE-8
+	.align	10
+builtin_environemnt_end:
 #endif
+
+#endif
+
+
+

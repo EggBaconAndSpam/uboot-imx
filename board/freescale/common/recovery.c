@@ -29,7 +29,7 @@ extern int check_powerkey_pressed(void);
 extern int check_recovery_cmd_file(void);
 extern enum boot_device get_boot_device(void);
 
-#ifdef CONFIG_MXC_KPD
+#if 0 //def CONFIG_MXC_KPD
 
 #define PRESSED_HOME	0x01
 #define PRESSED_POWER	0x02
@@ -90,7 +90,9 @@ int check_key_pressing(void)
 /* If not using mxc keypad, currently we will detect power key on board */
 int check_key_pressing(void)
 {
-	return 0;
+	extern ntx_check_droid_recovery_keys(void);
+
+	return ntx_check_droid_recovery_keys();
 }
 #endif
 
