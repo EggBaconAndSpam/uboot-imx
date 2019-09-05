@@ -66,7 +66,7 @@ plugin:           .word 0x0
 
 /* !!!! Need update Len field after adding ddr script !!!!!!!!!!!!!!!!!*/
 dcd_hdr:          .word 0x402002D2 /* Tag=0xD2, Len=67*8 + 4 + 4, Ver=0x40 */
-write_dcd_cmd:    .word 0x041C02CC /* Tag=0xCC, Len=67*8 + 4, Param=0x04 */
+write_dcd_cmd:    .word 0x040402CC /* Tag=0xCC, Len=67*8 + 4, Param=0x04 */
 
 MXC_DCD_ITEM(1, CCM_BASE_ADDR + 0x018, 0x00260324)
 MXC_DCD_ITEM(2, IOMUXC_BASE_ADDR + 0x344, 0x00000038)
